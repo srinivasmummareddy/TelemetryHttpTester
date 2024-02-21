@@ -1,0 +1,75 @@
+﻿mode: deployment  # Set the deployment mode (daemonset, deployment, or statefulset)
+replicaCount: 1  # Set the number of replicas
+
+image:
+  repository: otel/opentelemetry-collector-contrib  # Use the contrib image for additional receivers
+  pullPolicy: IfNotPresent
+  
+resources:
+  limits:
+    memory: 700Mi
+  requests:
+    memory: 600Mi
+    cpu: 70m
+config:
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: ${env:MY_POD_IP}:4317
+        http:
+          endpoint: ${env:MY_POD_IP}:4318
+          cors:
+            allowed_origins:
+            - http://*
+            - https://*            
+  processors:
+    resource: # Resource spec https://opentelemetry.io/docs/specs/semconv/resource/
+      attributes:
+        - action: insert
+          key: loki.format
+          value: raw
+        - action: insert
+          key: loki.resource.labels
+          value: service.name, app, runtime
+    
+    batch:
+      timeout: 1s
+      send_batch_size: 1024
+  
+  exporters:
+    prometheusremotewrite: # metrics
+      endpoint: "http://mimir-gateway.metrics.svc:80/api/v1/push"
+      tls:
+        insecure: true
+    
+    otlp/tempo:
+      endpoint: http://tempo-distributor-discovery.observability.svc.cluster.local:4317
+      tls:
+        insecure: true
+    
+    loki:
+      endpoint: http://loki-distributed-gateway.logging.svc.cluster.local/loki/api/v1/push
+      tls:
+        insecure: true
+  
+  service:
+    pipelines:
+      metrics:
+        receivers: [otlp]
+        processors: [batch]
+        exporters: [prometheusremotewrite]
+      
+      traces:
+        receivers: [otlp]
+        processors: [batch]
+        exporters: [otlp/tempo]
+      
+      logs:
+        receivers: [otlp]
+        processors: [batch,resource]
+        exporters: [loki]
+
+service:
+  type: LoadBalancer  
+
