@@ -1,0 +1,6 @@
+@TelemetryHttpTester_HostAddress = http://localhost:5283
+
+GET {{TelemetryHttpTester_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
